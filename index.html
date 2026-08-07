@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#1f6feb">
+<title>看屋紀錄</title>
+<style>
+:root{
+  --bg:#f2f4f7; --card:#fff; --line:#e3e6ea; --txt:#1b1f24; --sub:#6b7280;
+  --pri:#1f6feb; --pri-bg:#e8f0fe; --danger:#d43c3c; --ok:#0f9d58; --warn:#e8a33d;
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","PingFang TC","Segoe UI",sans-serif;
+  background:var(--bg); color:var(--txt); font-size:15px; line-height:1.5;
+  padding-bottom:calc(64px + var(--safe-b));
+}
+header{
+  position:sticky; top:0; z-index:20; background:var(--card);
+  border-bottom:1px solid var(--line); padding:10px 14px;
+  padding-top:calc(10px + env(safe-area-inset-top,0px));
+  display:flex; align-items:center; gap:10px;
+}
+header h1{font-size:17px;margin:0;flex:1;font-weight:700}
+.count{font-size:12px;color:var(--sub);font-weight:500}
+main{padding:12px}
+.hidden{display:none!important}
+
+/* ---- nav ---- */
+nav{
+  position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex;
+  background:var(--card); border-top:1px solid var(--line);
+  padding-bottom:var(--safe-b);
+}
+nav button{
+  flex:1; border:0; background:none; padding:9px 0 7px; font:inherit; font-size:11px;
+  color:var(--sub); display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer;
+}
+nav button .ic{font-size:19px;line-height:1}
+nav button.on{color:var(--pri);font-weight:700}
+
+/* ---- generic ---- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+label{display:block;font-size:12px;color:var(--sub);margin:0 0 4px;font-weight:600}
+input,select,textarea{
+  width:100%; font:inherit; font-size:16px; padding:9px 10px; border:1px solid var(--line);
+  border-radius:9px; background:#fff; color:var(--txt); appearance:none;
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-bg);border-color:var(--pri)}
+textarea{min-height:64px;resize:vertical}
+.row{display:flex;gap:8px}
+.row>*{flex:1;min-width:0}
+.f{margin-bottom:11px}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:1px solid var(--line);background:#fff;color:var(--txt);
+  padding:10px 14px;border-radius:10px;font:inherit;font-weight:600;cursor:pointer;
+}
+.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+.btn.dgr{color:var(--danger);border-color:#f0c9c9}
+.btn.sm{padding:6px 10px;font-size:13px;border-radius:8px}
+.btn:active{opacity:.7}
+.btn.block{width:100%}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg input{display:none}
+.seg label{
+  margin:0;flex:1;text-align:center;padding:9px 4px;border:1px solid var(--line);
+  border-radius:9px;background:#fff;color:var(--sub);font-size:14px;cursor:pointer;min-width:74px;
+}
+.seg input:checked+label{background:var(--pri-bg);border-color:var(--pri);color:var(--pri);font-weight:700}
+.empty{text-align:center;color:var(--sub);padding:48px 20px;font-size:14px}
+.hint{font-size:11px;color:var(--sub);margin-top:4px}
+
+/* ---- list ---- */
+.tools{display:flex;gap:8px;margin-bottom:10px}
+.tools input,.tools select{font-size:14px;padding:8px 9px}
+.tools select{flex:0 0 auto;width:auto}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:4px;-webkit-overflow-scrolling:touch}
+.chip{
+  flex:0 0 auto;padding:6px 12px;border:1px solid var(--line);border-radius:99px;
+  background:#fff;font-size:13px;color:var(--sub);cursor:pointer;white-space:nowrap;
+}
+.chip.on{background:var(--pri);border-color:var(--pri);color:#fff;font-weight:600}
+
+.item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;position:relative}
+.item.picked{border-color:var(--pri);box-shadow:0 0 0 2px var(--pri-bg)}
+.item .top{display:flex;align-items:flex-start;gap:8px}
+.item .name{font-weight:700;font-size:16px;flex:1;word-break:break-all}
+.tag{font-size:11px;padding:2px 7px;border-radius:6px;background:var(--pri-bg);color:var(--pri);font-weight:700;white-space:nowrap}
+.tag.g{background:#e6f4ea;color:var(--ok)}
+.tag.y{background:#fdf3e2;color:#a5701c}
+.meta{font-size:12.5px;color:var(--sub);margin-top:3px;word-break:break-all}
+.nums{display:flex;gap:14px;margin-top:9px;flex-wrap:wrap}
+.num b{display:block;font-size:17px;font-weight:700}
+.num span{font-size:11px;color:var(--sub)}
+.acts{display:flex;gap:6px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line)}
+.acts .btn{flex:1}
+.star{color:var(--warn);font-size:13px;letter-spacing:1px}
+a.tel{color:var(--pri);text-decoration:none;font-weight:600}
+
+/* ---- compare ---- */
+.cmpwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;background:var(--card);border:1px solid var(--line);border-radius:12px}
+table.cmp{border-collapse:collapse;width:100%;font-size:13.5px}
+table.cmp th,table.cmp td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}
+table.cmp th.rowh{
+  position:sticky;left:0;background:#fafbfc;z-index:2;font-size:12px;color:var(--sub);
+  white-space:nowrap;font-weight:600;border-right:1px solid var(--line);
+}
+table.cmp thead th{background:#fafbfc;font-weight:700;font-size:13px;min-width:130px}
+table.cmp td.best{background:#e6f4ea;font-weight:700;color:#0b7a44}
+.bar{height:5px;border-radius:3px;background:var(--pri);margin-top:4px;min-width:3px}
+
+/* ---- dialog / toast ---- */
+#mask{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:24px}
+#dlg{background:var(--card);border-radius:14px;padding:18px;width:100%;max-width:320px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+#dlgMsg{font-size:15px;margin-bottom:16px;white-space:pre-wrap;word-break:break-all}
+#dlg .row .btn{padding:11px}
+#toast{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + var(--safe-b));z-index:110;
+  background:#22262b;color:#fff;padding:10px 18px;border-radius:99px;font-size:14px;
+  max-width:80%;text-align:center;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="ttl">看屋紀錄</h1>
+  <span class="count" id="cnt"></span>
+</header>
+
+<main>
+  <!-- ============ 列表 ============ -->
+  <section id="v-list">
+    <div class="tools">
+      <input id="q" type="search" placeholder="搜尋 建案 / 建商 / 區域 / 仲介">
+      <select id="sort">
+        <option value="new">最新</option>
+        <option value="unit">單價低→高</option>
+        <option value="total">總價低→高</option>
+        <option value="ping">坪數大→小</option>
+        <option value="rate">評分高→低</option>
+      </select>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div id="list"></div>
+  </section>
+
+  <!-- ============ 表單 ============ -->
+  <section id="v-form" class="hidden">
+    <form id="form" autocomplete="off">
+      <div class="card">
+        <div class="f">
+          <label>建案 / 物件名稱 *</label>
+          <input name="title" required placeholder="例：文心森林 A棟">
+        </div>
+        <div class="f">
+          <label>看屋類別</label>
+          <div class="seg" id="segStage"></div>
+        </div>
+        <div class="f">
+          <label>房屋類別</label>
+          <select name="type">
+            <option>電梯大樓</option><option>華廈</option><option>公寓</option>
+            <option>透天厝</option><option>別墅</option><option>套房</option>
+            <option>店面</option><option>土地</option><option>其他</option>
+          </select>
+        </div>
+        <div class="f">
+          <label>看屋日期</label>
+          <input type="date" name="date">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row f">
+          <div>
+            <label>縣市</label>
+            <select name="city" id="citySel"></select>
+          </div>
+          <div>
+            <label>區域</label>
+            <input name="area" list="areaList" placeholder="例：北屯區">
+            <datalist id="areaList"></datalist>
+          </div>
+        </div>
+        <div class="f">
+          <label>地址 / 路段</label>
+          <input name="addr" placeholder="例：崇德路二段">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row f">
+          <div>
+            <label>坪數（權狀）</label>
+            <input type="number" step="0.01" inputmode="decimal" name="ping" id="fPing" placeholder="35.5">
+          </div>
+          <div>
+            <label>房數</label>
+            <select name="rooms">
+              <option value="">—</option>
+              <option>1房</option><option>2房</option><option>3房</option>
+              <option>4房</option><option>5房以上</option><option>套房</option>
+            </select>
+          </div>
+        </div>
+        <div class="row f">
+          <div>
+            <label>總價（萬）</label>
+            <input type="number" step="1" inputmode="decimal" name="total" id="fTotal" placeholder="1580">
+          </div>
+          <div>
+            <label>單坪價（萬/坪）</label>
+            <input type="number" step="0.01" inputmode="decimal" name="unit" id="fUnit" placeholder="44.5">
+          </div>
+        </div>
+        <div class="hint" id="calcHint">輸入其中兩項會自動換算第三項</div>
+        <div class="row f" style="margin-top:11px">
+          <div>
+            <label>車位（萬）</label>
+            <input type="number" step="1" inputmode="decimal" name="park" placeholder="200">
+          </div>
+          <div>
+            <label>公設比（%）</label>
+            <input type="number" step="0.1" inputmode="decimal" name="ratio" placeholder="32">
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="f">
+          <label>建設公司 / 屋主</label>
+          <input name="builder" placeholder="例：陸府建設">
+        </div>
+        <div class="row f">
+          <div>
+            <label>業代 / 仲介姓名</label>
+            <input name="agent" placeholder="王小明">
+          </div>
+          <div>
+            <label>聯絡電話</label>
+            <input type="tel" inputmode="tel" name="phone" placeholder="0912345678">
+          </div>
+        </div>
+        <div class="f">
+          <label>仲介公司 / 代銷</label>
+          <input name="agency" placeholder="例：信義房屋 / 甲山林">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="f">
+          <label>評分</label>
+          <div class="seg" id="segRate"></div>
+        </div>
+        <div class="f">
+          <label>備註（優缺點、格局、屋況）</label>
+          <textarea name="note" placeholder="採光好、鄰中庭；但主臥小、對面有宮廟…"></textarea>
+        </div>
+      </div>
+
+      <button class="btn pri block" type="submit" style="margin-bottom:8px">儲存</button>
+      <button class="btn block" type="button" id="cancelBtn">取消</button>
+    </form>
+  </section>
+
+  <!-- ============ 比較 ============ -->
+  <section id="v-cmp" class="hidden">
+    <div class="card" style="padding:10px 12px">
+      <div style="font-size:13px;color:var(--sub)">在「紀錄」頁勾選要比較的物件（2～5 筆）</div>
+      <div id="cmpPicked" style="margin-top:8px"></div>
+    </div>
+    <div id="cmpBody"></div>
+  </section>
+
+  <!-- ============ 設定 ============ -->
+  <section id="v-set" class="hidden">
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:8px">資料備份</div>
+      <button class="btn block" id="expJson" style="margin-bottom:8px">匯出 JSON（備份）</button>
+      <button class="btn block" id="expCsv" style="margin-bottom:8px">匯出 CSV（Excel）</button>
+      <button class="btn block" id="impBtn">匯入 JSON</button>
+      <input type="file" id="impFile" accept="application/json,.json" class="hidden">
+      <div class="hint">資料只存在這台手機的瀏覽器，換手機請先匯出備份。</div>
+    </div>
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:8px">加到手機主畫面</div>
+      <div class="hint" style="font-size:12.5px;line-height:1.7">
+        iPhone：Safari 開啟 → 分享 → 「加入主畫面」<br>
+        Android：Chrome 右上選單 → 「加到主畫面」
+      </div>
+    </div>
+    <div class="card">
+      <button class="btn dgr block" id="clearAll">清除所有資料</button>
+    </div>
+  </section>
+</main>
+
+<div id="mask" class="hidden">
+  <div id="dlg">
+    <div id="dlgMsg"></div>
+    <div class="row">
+      <button class="btn" id="dlgNo">取消</button>
+      <button class="btn pri" id="dlgYes">確定</button>
+    </div>
+  </div>
+</div>
+
+<nav>
+  <button data-v="list" class="on"><span class="ic">📋</span>紀錄</button>
+  <button data-v="form"><span class="ic">➕</span>新增</button>
+  <button data-v="cmp"><span class="ic">⚖️</span>比較</button>
+  <button data-v="set"><span class="ic">⚙️</span>設定</button>
+</nav>
+
+<script>
+(function(){
+'use strict';
+const KEY='house_records_v1';
+const STAGES=['預售','新屋','中古'];
+const CITIES=['基隆市','台北市','新北市','桃園市','新竹市','新竹縣','苗栗縣','台中市','彰化縣','南投縣','雲林縣','嘉義市','嘉義縣','台南市','高雄市','屏東縣','宜蘭縣','花蓮縣','台東縣','澎湖縣','金門縣','連江縣'];
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=v=>{const n=parseFloat(v);return isFinite(n)?n:null;};
+const fmt=n=>n==null?'—':(Math.round(n*100)/100).toLocaleString('en-US');
+
+let data=load(), view='list', editId=null, picked=new Set(), filter='', keyword='', sortBy='new';
+
+/* 自製確認框：原生 confirm() 在部分手機 WebView / 加到主畫面模式會被封鎖 */
+function ask(msg,okText){
+  return new Promise(res=>{
+    $('#dlgMsg').textContent=msg;
+    $('#dlgYes').textContent=okText||'確定';
+    $('#mask').classList.remove('hidden');
+    const done=v=>{ $('#mask').classList.add('hidden'); $('#dlgYes').onclick=$('#dlgNo').onclick=$('#mask').onclick=null; res(v); };
+    $('#dlgYes').onclick=()=>done(true);
+    $('#dlgNo').onclick=()=>done(false);
+    $('#mask').onclick=e=>{ if(e.target===$('#mask')) done(false); };
+  });
+}
+let toastT;
+function toast(msg){
+  let el=$('#toast');
+  if(!el){ el=document.createElement('div'); el.id='toast'; document.body.appendChild(el); }
+  el.textContent=msg; clearTimeout(toastT);
+  toastT=setTimeout(()=>el.remove(),2200);
+}
+
+function load(){ try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return [];} }
+function save(){ localStorage.setItem(KEY,JSON.stringify(data)); }
+
+/* ---------- build static UI ---------- */
+$('#citySel').innerHTML='<option value="">—</option>'+CITIES.map(c=>`<option>${c}</option>`).join('');
+$('#segStage').innerHTML=STAGES.map((s,i)=>
+  `<input type="radio" name="stage" id="st${i}" value="${s}"${i===0?' checked':''}><label for="st${i}">${s}</label>`).join('');
+$('#segRate').innerHTML=[1,2,3,4,5].map(n=>
+  `<input type="radio" name="rate" id="rt${n}" value="${n}"${n===3?' checked':''}><label for="rt${n}">${'★'.repeat(n)}</label>`).join('');
+$('#chips').innerHTML=['全部',...STAGES].map(s=>
+  `<div class="chip${s==='全部'?' on':''}" data-f="${s==='全部'?'':s}">${s}</div>`).join('');
+
+/* ---------- nav ---------- */
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.v));
+function go(v){
+  if(v==='form'&&view!=='form'&&!editId) resetForm();
+  view=v;
+  ['list','form','cmp','set'].forEach(x=>$('#v-'+x).classList.toggle('hidden',x!==v));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  $('#ttl').textContent={list:'看屋紀錄',form:editId?'編輯紀錄':'新增紀錄',cmp:'物件比較',set:'設定'}[v];
+  window.scrollTo(0,0);
+  if(v==='cmp') renderCmp();
+  if(v==='list') renderList();
+}
+
+/* ---------- price auto-calc ---------- */
+const P=$('#fPing'),T=$('#fTotal'),U=$('#fUnit');
+function calc(src){
+  const p=num(P.value),t=num(T.value),u=num(U.value);
+  if(src!=='unit'&&p>0&&t>0) U.value=(Math.round(t/p*100)/100);
+  else if(src!=='total'&&p>0&&u>0) T.value=(Math.round(u*p));
+  else if(src!=='ping'&&t>0&&u>0) P.value=(Math.round(t/u*100)/100);
+}
+P.oninput=()=>calc('ping'); T.oninput=()=>calc('total'); U.oninput=()=>calc('unit');
+
+/* ---------- form ---------- */
+function resetForm(){
+  $('#form').reset(); editId=null;
+  $('#form').date.value=new Date().toISOString().slice(0,10);
+  $('#st0').checked=true; $('#rt3').checked=true;
+}
+$('#cancelBtn').onclick=()=>{resetForm();go('list');};
+
+$('#form').onsubmit=e=>{
+  e.preventDefault();
+  const f=new FormData(e.target), o={};
+  f.forEach((v,k)=>o[k]=typeof v==='string'?v.trim():v);
+  ['ping','total','unit','park','ratio','rate'].forEach(k=>o[k]=num(o[k]));
+  if(o.ping>0&&o.total>0&&!o.unit) o.unit=Math.round(o.total/o.ping*100)/100;
+  const isEdit=!!editId;
+  if(isEdit){
+    const i=data.findIndex(r=>r.id===editId);
+    data[i]={...data[i],...o};
+  }else{
+    o.id='h'+Date.now()+Math.random().toString(36).slice(2,6);
+    o.created=Date.now();
+    data.unshift(o);
+  }
+  save(); resetForm(); go('list');
+  toast(`✓ ${isEdit?'已更新':'已儲存'}「${o.title}」`);
+};
+
+/* ---------- list ---------- */
+$('#q').oninput=e=>{keyword=e.target.value.trim().toLowerCase();renderList();};
+$('#sort').onchange=e=>{sortBy=e.target.value;renderList();};
+$('#chips').onclick=e=>{
+  const c=e.target.closest('.chip'); if(!c)return;
+  filter=c.dataset.f;
+  document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('on',x===c));
+  renderList();
+};
+
+function visible(){
+  return data.filter(r=>{
+    if(filter&&r.stage!==filter) return false;
+    if(!keyword) return true;
+    return [r.title,r.builder,r.city,r.area,r.addr,r.agent,r.agency,r.note]
+      .join(' ').toLowerCase().includes(keyword);
+  }).sort((a,b)=>{
+    const g=(x,k)=>x[k]==null?Infinity:x[k];
+    switch(sortBy){
+      case 'unit':  return g(a,'unit')-g(b,'unit');
+      case 'total': return g(a,'total')-g(b,'total');
+      case 'ping':  return (b.ping||0)-(a.ping||0);
+      case 'rate':  return (b.rate||0)-(a.rate||0);
+      default:      return (b.created||0)-(a.created||0);
+    }
+  });
+}
+
+function renderList(){
+  const rows=visible();
+  $('#cnt').textContent=`${rows.length} 筆`+(picked.size?` · 已選 ${picked.size}`:'');
+  if(!data.length){
+    $('#list').innerHTML='<div class="empty">還沒有紀錄<br>點下方「➕ 新增」開始記錄看屋</div>';
+    return;
+  }
+  if(!rows.length){ $('#list').innerHTML='<div class="empty">沒有符合的紀錄</div>'; return; }
+  const tagCls={'預售':'','新屋':'g','中古':'y'};
+  $('#list').innerHTML=rows.map(r=>{
+    const loc=[r.city,r.area,r.addr].filter(Boolean).join(' ');
+    const who=[r.agency,r.agent].filter(Boolean).join(' · ');
+    return `<div class="item${picked.has(r.id)?' picked':''}" data-id="${r.id}">
+      <div class="top">
+        <div class="name">${esc(r.title)}</div>
+        <span class="tag ${tagCls[r.stage]||''}">${esc(r.stage||'')}</span>
+      </div>
+      <div class="meta">${esc(r.type||'')}${loc?' · '+esc(loc):''}${r.rooms?' · '+esc(r.rooms):''}</div>
+      ${r.builder?`<div class="meta">🏗 ${esc(r.builder)}</div>`:''}
+      ${who||r.phone?`<div class="meta">👤 ${esc(who)}${r.phone?` <a class="tel" href="tel:${esc(r.phone)}">${esc(r.phone)}</a>`:''}</div>`:''}
+      <div class="nums">
+        <div class="num"><b>${fmt(r.total)}</b><span>總價(萬)</span></div>
+        <div class="num"><b>${fmt(r.unit)}</b><span>單價(萬/坪)</span></div>
+        <div class="num"><b>${fmt(r.ping)}</b><span>坪數</span></div>
+        ${r.rate?`<div class="num"><b class="star">${'★'.repeat(r.rate)}</b><span>評分</span></div>`:''}
+      </div>
+      ${r.note?`<div class="meta" style="margin-top:8px;white-space:pre-wrap">📝 ${esc(r.note)}</div>`:''}
+      <div class="acts">
+        <button class="btn sm" data-a="pick">${picked.has(r.id)?'✓ 已選':'比較'}</button>
+        <button class="btn sm" data-a="edit">編輯</button>
+        <button class="btn sm dgr" data-a="del">刪除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+$('#list').onclick=async e=>{
+  const btn=e.target.closest('button[data-a]'); if(!btn) return;
+  const id=btn.closest('.item').dataset.id, r=data.find(x=>x.id===id);
+  if(btn.dataset.a==='pick'){
+    if(picked.has(id)) picked.delete(id);
+    else{ if(picked.size>=5){toast('最多比較 5 筆');return;} picked.add(id); }
+    renderList();
+  }
+  if(btn.dataset.a==='edit'){
+    editId=id; const f=$('#form'); f.reset();
+    Object.entries(r).forEach(([k,v])=>{ if(f[k]&&v!=null&&k!=='id') f[k].value=v; });
+    document.querySelectorAll('[name=stage]').forEach(i=>i.checked=i.value===r.stage);
+    document.querySelectorAll('[name=rate]').forEach(i=>i.checked=+i.value===r.rate);
+    go('form');
+  }
+  if(btn.dataset.a==='del'){
+    if(!await ask(`刪除「${r.title}」？`,'刪除')) return;
+    data=data.filter(x=>x.id!==id); picked.delete(id); save(); renderList();
+    toast('已刪除');
+  }
+};
+
+/* ---------- compare ---------- */
+function renderCmp(){
+  const rows=data.filter(r=>picked.has(r.id));
+  $('#cmpPicked').innerHTML = rows.length
+    ? rows.map(r=>`<span class="chip on" data-id="${r.id}" style="margin:0 6px 6px 0;display:inline-block">${esc(r.title)} ✕</span>`).join('')
+    : '<span class="hint">尚未選擇</span>';
+  if(rows.length<2){
+    $('#cmpBody').innerHTML='<div class="empty">請至少選 2 筆物件</div>';
+    return;
+  }
+  const lows=['unit','total','ratio'];          // 越低越好
+  const best={};
+  lows.forEach(k=>{ const v=rows.map(r=>r[k]).filter(x=>x>0); if(v.length>1) best[k]=Math.min(...v); });
+  ['ping','rate'].forEach(k=>{ const v=rows.map(r=>r[k]).filter(x=>x>0); if(v.length>1) best[k]=Math.max(...v); });
+  const maxU=Math.max(...rows.map(r=>r.unit||0))||1;
+
+  const F=[
+    ['看屋類別', r=>esc(r.stage||'—')],
+    ['房屋類別', r=>esc(r.type||'—')],
+    ['縣市 / 區域', r=>esc([r.city,r.area].filter(Boolean).join(' ')||'—')],
+    ['地址', r=>esc(r.addr||'—')],
+    ['單坪價(萬)', r=>fmt(r.unit)+(r.unit?`<div class="bar" style="width:${Math.round(r.unit/maxU*100)}%"></div>`:''),'unit'],
+    ['總價(萬)', r=>fmt(r.total),'total'],
+    ['坪數', r=>fmt(r.ping),'ping'],
+    ['房數', r=>esc(r.rooms||'—')],
+    ['車位(萬)', r=>fmt(r.park)],
+    ['公設比(%)', r=>fmt(r.ratio),'ratio'],
+    ['建設公司', r=>esc(r.builder||'—')],
+    ['業代/仲介', r=>esc([r.agency,r.agent].filter(Boolean).join(' · ')||'—')],
+    ['電話', r=>r.phone?`<a class="tel" href="tel:${esc(r.phone)}">${esc(r.phone)}</a>`:'—'],
+    ['看屋日期', r=>esc(r.date||'—')],
+    ['評分', r=>r.rate?`<span class="star">${'★'.repeat(r.rate)}</span>`:'—','rate'],
+    ['備註', r=>`<div style="white-space:pre-wrap;min-width:130px">${esc(r.note||'—')}</div>`],
+  ];
+  $('#cmpBody').innerHTML=`<div class="cmpwrap"><table class="cmp">
+    <thead><tr><th class="rowh"></th>${rows.map(r=>`<th>${esc(r.title)}</th>`).join('')}</tr></thead>
+    <tbody>${F.map(([lab,fn,k])=>`<tr><th class="rowh">${lab}</th>${
+      rows.map(r=>`<td class="${k&&best[k]!=null&&r[k]===best[k]?'best':''}">${fn(r)}</td>`).join('')
+    }</tr>`).join('')}</tbody></table></div>
+    <div class="hint" style="margin:8px 2px">綠底＝該項目最優（單價/總價/公設比越低越好，坪數/評分越高越好）</div>`;
+}
+$('#cmpPicked').onclick=e=>{
+  const c=e.target.closest('.chip'); if(!c) return;
+  picked.delete(c.dataset.id); renderCmp();
+};
+
+/* ---------- backup ---------- */
+function dl(name,text,mime){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([text],{type:mime}));
+  a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+}
+const stamp=()=>new Date().toISOString().slice(0,10);
+$('#expJson').onclick=()=>dl(`看屋紀錄_${stamp()}.json`,JSON.stringify(data,null,2),'application/json');
+$('#expCsv').onclick=()=>{
+  const cols=[['title','建案'],['stage','看屋類別'],['type','房屋類別'],['city','縣市'],['area','區域'],
+    ['addr','地址'],['ping','坪數'],['rooms','房數'],['total','總價(萬)'],['unit','單價(萬/坪)'],
+    ['park','車位(萬)'],['ratio','公設比(%)'],['builder','建設公司'],['agency','仲介公司'],
+    ['agent','業代姓名'],['phone','電話'],['date','看屋日期'],['rate','評分'],['note','備註']];
+  const q=v=>`"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  const csv='\ufeff'+[cols.map(c=>q(c[1])).join(',')]
+    .concat(data.map(r=>cols.map(c=>q(r[c[0]])).join(','))).join('\r\n');
+  dl(`看屋紀錄_${stamp()}.csv`,csv,'text/csv;charset=utf-8');
+};
+$('#impBtn').onclick=()=>$('#impFile').click();
+$('#impFile').onchange=e=>{
+  const file=e.target.files[0]; if(!file) return;
+  const fr=new FileReader();
+  fr.onload=()=>{
+    try{
+      const arr=JSON.parse(fr.result);
+      if(!Array.isArray(arr)) throw 0;
+      const ids=new Set(data.map(r=>r.id));
+      const add=arr.filter(r=>r&&r.id&&!ids.has(r.id));
+      data=add.concat(data); save(); toast(`已匯入 ${add.length} 筆`); go('list');
+    }catch(_){ toast('檔案格式不正確'); }
+    e.target.value='';
+  };
+  fr.readAsText(file);
+};
+$('#clearAll').onclick=async()=>{
+  if(!await ask(`確定清除全部 ${data.length} 筆看屋紀錄？此動作無法復原，建議先匯出備份。`,'全部清除')) return;
+  if(!await ask('再次確認：真的要全部刪除？','確定刪除')) return;
+  data=[]; picked.clear(); save(); toast('已清除全部紀錄'); go('list');
+};
+
+/* ---------- 區域建議：沿用已輸入過的區域 ---------- */
+function refreshAreas(){
+  const set=[...new Set(data.map(r=>r.area).filter(Boolean))];
+  $('#areaList').innerHTML=set.map(a=>`<option value="${esc(a)}">`).join('');
+}
+const _save=save;
+save=function(){_save();refreshAreas();};
+
+resetForm(); refreshAreas(); renderList();
+})();
+</script>
+</body>
+</html>
