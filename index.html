@@ -94,6 +94,12 @@ textarea{min-height:64px;resize:vertical}
 .tag{font-size:11px;padding:2px 7px;border-radius:6px;background:var(--pri-bg);color:var(--pri);font-weight:700;white-space:nowrap}
 .tag.g{background:#e6f4ea;color:var(--ok)}
 .tag.y{background:#fdf3e2;color:#a5701c}
+.tag.s-live{background:#e8f0fe;color:var(--pri)}
+.tag.s-again{background:#fdf3e2;color:#a5701c}
+.tag.s-offer{background:#e6f4ea;color:var(--ok)}
+.tag.s-out{background:#eceef1;color:#7a828c}
+.num b.muted{color:var(--sub);font-size:14px}
+.chips+.chips{margin-top:-2px}
 .meta{font-size:12.5px;color:var(--sub);margin-top:3px;word-break:break-all}
 .nums{display:flex;gap:14px;margin-top:9px;flex-wrap:wrap}
 .num b{display:block;font-size:17px;font-weight:700}
@@ -145,8 +151,10 @@ table.cmp td.best{background:#e6f4ea;font-weight:700;color:#0b7a44}
         <option value="total">總價低→高</option>
         <option value="ping">坪數大→小</option>
         <option value="rate">評分高→低</option>
+        <option value="dist">離錨點近→遠</option>
       </select>
     </div>
+    <div class="chips" id="chipsStatus"></div>
     <div class="chips" id="chips"></div>
     <div id="list"></div>
   </section>
@@ -162,6 +170,10 @@ table.cmp td.best{background:#e6f4ea;font-weight:700;color:#0b7a44}
         <div class="f">
           <label>看屋類別</label>
           <div class="seg" id="segStage"></div>
+        </div>
+        <div class="f">
+          <label>追蹤狀態</label>
+          <div class="seg" id="segStatus"></div>
         </div>
         <div class="f">
           <label>房屋類別</label>
@@ -192,6 +204,14 @@ table.cmp td.best{background:#e6f4ea;font-weight:700;color:#0b7a44}
         <div class="f">
           <label>地址 / 路段</label>
           <input name="addr" placeholder="例：崇德路二段">
+        </div>
+        <div class="f" style="margin-bottom:0">
+          <label>定位（用來計算離錨點的直線距離）</label>
+          <div class="row" style="align-items:stretch">
+            <button class="btn sm" type="button" id="gpsBtn" style="flex:0 0 auto">📍 用目前位置</button>
+            <div id="geoState" class="hint" style="margin:0;align-self:center;flex:1">儲存時會自動依地址查詢座標</div>
+          </div>
+          <input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="geoSrc">
         </div>
       </div>
 
@@ -231,6 +251,21 @@ table.cmp td.best{background:#e6f4ea;font-weight:700;color:#0b7a44}
             <input type="number" step="0.1" inputmode="decimal" name="ratio" placeholder="32">
           </div>
         </div>
+        <div class="row f" style="margin-bottom:0">
+          <div>
+            <label>樓層</label>
+            <input type="number" step="1" inputmode="numeric" name="floor" placeholder="7">
+          </div>
+          <div>
+            <label>總樓層</label>
+            <input type="number" step="1" inputmode="numeric" name="floors" placeholder="14">
+          </div>
+          <div>
+            <label>建成年份</label>
+            <input type="number" step="1" inputmode="numeric" name="built" placeholder="2008">
+          </div>
+        </div>
+        <div class="hint">預售屋樓層與年份可留空</div>
       </div>
 
       <div class="card">
@@ -282,6 +317,27 @@ table.cmp td.best{background:#e6f4ea;font-weight:700;color:#0b7a44}
   <!-- ============ 設定 ============ -->
   <section id="v-set" class="hidden">
     <div class="card">
+      <div style="font-weight:700;margin-bottom:8px">距離錨點</div>
+      <div class="f">
+        <label>地址或地點名稱</label>
+        <div class="row">
+          <input id="ancQ" placeholder="例：台北101 / 公司地址">
+          <button class="btn sm" type="button" id="ancFind" style="flex:0 0 auto">查詢</button>
+        </div>
+      </div>
+      <div class="row f" style="margin-bottom:8px">
+        <div><label>緯度</label><input id="ancLat" type="number" step="any" inputmode="decimal"></div>
+        <div><label>經度</label><input id="ancLng" type="number" step="any" inputmode="decimal"></div>
+      </div>
+      <button class="btn pri block" type="button" id="ancSave">儲存錨點</button>
+      <div class="hint" id="ancState"></div>
+    </div>
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:8px">批次定位</div>
+      <button class="btn block" type="button" id="batchGeo">定位所有未定位的紀錄</button>
+      <div class="hint" id="batchState">依 OpenStreetMap 規範每秒查詢一次，筆數多時需要一點時間。</div>
+    </div>
+    <div class="card">
       <div style="font-weight:700;margin-bottom:8px">資料備份</div>
       <button class="btn block" id="expJson" style="margin-bottom:8px">匯出 JSON（備份）</button>
       <button class="btn block" id="expCsv" style="margin-bottom:8px">匯出 CSV（Excel）</button>
@@ -330,7 +386,12 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 const num=v=>{const n=parseFloat(v);return isFinite(n)?n:null;};
 const fmt=n=>n==null?'—':(Math.round(n*100)/100).toLocaleString('en-US');
 
-let data=load(), view='list', editId=null, picked=new Set(), filter='', keyword='', sortBy='new';
+const ANCHOR_KEY='house_anchor_v1';
+const DEFAULT_ANCHOR={name:'台北101',lat:25.0338352,lng:121.5644995};
+const STATUSES=['候選中','要複看','已出價','已排除'];
+
+let data=load(), anchor=loadAnchor(), view='list', editId=null, picked=new Set(),
+    filter='', statusFilter='', keyword='', sortBy='new';
 
 /* 自製確認框：原生 confirm() 在部分手機 WebView / 加到主畫面模式會被封鎖 */
 function ask(msg,okText){
@@ -354,6 +415,52 @@ function toast(msg){
 
 function load(){ try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return [];} }
 function save(){ localStorage.setItem(KEY,JSON.stringify(data)); }
+function loadAnchor(){
+  try{ const a=JSON.parse(localStorage.getItem(ANCHOR_KEY)); return (a&&isFinite(a.lat)&&isFinite(a.lng))?a:{...DEFAULT_ANCHOR}; }
+  catch(e){ return {...DEFAULT_ANCHOR}; }
+}
+function saveAnchor(){ localStorage.setItem(ANCHOR_KEY,JSON.stringify(anchor)); }
+
+/* ---------- 直線距離（Haversine），從座標即時計算，改錨點會全部自動更新 ---------- */
+/* 注意 isFinite(null)===true，所以一定要先擋掉 null，否則未定位會被當成座標 0,0 */
+const hasLL=r=>!!r&&typeof r.lat==='number'&&isFinite(r.lat)&&typeof r.lng==='number'&&isFinite(r.lng);
+function distKm(r){
+  if(!hasLL(r)) return null;
+  const R=6371, rad=d=>d*Math.PI/180;
+  const dLat=rad(r.lat-anchor.lat), dLng=rad(r.lng-anchor.lng);
+  const a=Math.sin(dLat/2)**2+Math.cos(rad(anchor.lat))*Math.cos(rad(r.lat))*Math.sin(dLng/2)**2;
+  return Math.round(R*2*Math.asin(Math.sqrt(a))*10)/10;
+}
+const age=y=>(y>1800&&y<=new Date().getFullYear())?new Date().getFullYear()-y:null;
+
+/* ---------- 地理編碼：OSM Nominatim（免費免金鑰）----------
+   實測台灣門牌（「松高路11號」）查不到，路段（「松高路」）查得到，
+   所以第一次失敗後自動去掉 號/巷/弄 再試一次，精度退到路段層級（±200m）。 */
+function stripHouseNo(addr){
+  return String(addr||'')
+    .replace(/\d+\s*(號|弄|巷)[之\-\d]*/g,'')
+    .replace(/[之\-]\d+/g,'')
+    .replace(/\s+/g,' ').trim();
+}
+async function geocode(q){
+  const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=tw&q='+encodeURIComponent(q);
+  const r=await fetch(url);
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const j=await r.json();
+  return j[0]?{lat:parseFloat(j[0].lat),lng:parseFloat(j[0].lon)}:null;
+}
+async function geocodeRecord(r){
+  const base=[r.city,r.area].filter(Boolean).join('');
+  const full=base+(r.addr||'');
+  if(!full) return null;
+  let hit=await geocode(full);
+  if(!hit){
+    const loose=base+stripHouseNo(r.addr);
+    if(loose && loose!==full){ await sleep(1100); hit=await geocode(loose); }
+  }
+  return hit;
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 /* ---------- build static UI ---------- */
 $('#citySel').innerHTML='<option value="">—</option>'+CITIES.map(c=>`<option>${c}</option>`).join('');
@@ -361,8 +468,13 @@ $('#segStage').innerHTML=STAGES.map((s,i)=>
   `<input type="radio" name="stage" id="st${i}" value="${s}"${i===0?' checked':''}><label for="st${i}">${s}</label>`).join('');
 $('#segRate').innerHTML=[1,2,3,4,5].map(n=>
   `<input type="radio" name="rate" id="rt${n}" value="${n}"${n===3?' checked':''}><label for="rt${n}">${'★'.repeat(n)}</label>`).join('');
+$('#segStatus').innerHTML=STATUSES.map((s,i)=>
+  `<input type="radio" name="status" id="ss${i}" value="${s}"${i===0?' checked':''}><label for="ss${i}">${s}</label>`).join('');
 $('#chips').innerHTML=['全部',...STAGES].map(s=>
   `<div class="chip${s==='全部'?' on':''}" data-f="${s==='全部'?'':s}">${s}</div>`).join('');
+/* 追蹤中＝除了「已排除」之外全部；預設隱藏已排除，但可用 chip 叫回 */
+$('#chipsStatus').innerHTML=['追蹤中',...STATUSES].map(s=>
+  `<div class="chip${s==='追蹤中'?' on':''}" data-s="${s==='追蹤中'?'':s}">${s}</div>`).join('');
 
 /* ---------- nav ---------- */
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.v));
@@ -391,28 +503,59 @@ P.oninput=()=>calc('ping'); T.oninput=()=>calc('total'); U.oninput=()=>calc('uni
 function resetForm(){
   $('#form').reset(); editId=null;
   $('#form').date.value=new Date().toISOString().slice(0,10);
-  $('#st0').checked=true; $('#rt3').checked=true;
+  $('#st0').checked=true; $('#rt3').checked=true; $('#ss0').checked=true;
+  setGeoState('儲存時會自動依地址查詢座標');
 }
+function setGeoState(msg){ $('#geoState').textContent=msg; }
 $('#cancelBtn').onclick=()=>{resetForm();go('list');};
+
+/* GPS 打卡：只放表單裡，卡片上不放（避免誤觸把座標蓋成現在位置） */
+$('#gpsBtn').onclick=()=>{
+  if(!navigator.geolocation){ toast('此瀏覽器不支援定位'); return; }
+  setGeoState('定位中…');
+  navigator.geolocation.getCurrentPosition(p=>{
+    const f=$('#form');
+    f.lat.value=p.coords.latitude; f.lng.value=p.coords.longitude; f.geoSrc.value='gps';
+    setGeoState(`已用目前位置：${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)}`);
+    toast('已記錄目前位置');
+  },err=>{
+    setGeoState('定位失敗：'+(err.code===1?'你拒絕了定位權限':'取得不到位置'));
+  },{enableHighAccuracy:true,timeout:10000});
+};
 
 $('#form').onsubmit=e=>{
   e.preventDefault();
   const f=new FormData(e.target), o={};
   f.forEach((v,k)=>o[k]=typeof v==='string'?v.trim():v);
-  ['ping','total','unit','park','ratio','rate'].forEach(k=>o[k]=num(o[k]));
+  ['ping','total','unit','park','ratio','rate','floor','floors','built','lat','lng'].forEach(k=>o[k]=num(o[k]));
   if(o.ping>0&&o.total>0&&!o.unit) o.unit=Math.round(o.total/o.ping*100)/100;
   const isEdit=!!editId;
+  let rec;
   if(isEdit){
     const i=data.findIndex(r=>r.id===editId);
-    data[i]={...data[i],...o};
+    rec=data[i]={...data[i],...o};
   }else{
     o.id='h'+Date.now()+Math.random().toString(36).slice(2,6);
     o.created=Date.now();
-    data.unshift(o);
+    data.unshift(o); rec=o;
   }
   save(); resetForm(); go('list');
-  toast(`✓ ${isEdit?'已更新':'已儲存'}「${o.title}」`);
+  toast(`✓ ${isEdit?'已更新':'已儲存'}「${rec.title}」`);
+  /* 儲存永不被定位擋住：先存好，再背景補座標，失敗就留「未定位」 */
+  if(rec.geoSrc!=='gps'&&!hasLL(rec)) autoGeocode(rec);
 };
+
+async function autoGeocode(rec){
+  try{
+    const hit=await geocodeRecord(rec);
+    const live=data.find(r=>r.id===rec.id);
+    if(!live||!hit) return;
+    if(live.geoSrc==='gps'||hasLL(live)) return;
+    live.lat=hit.lat; live.lng=hit.lng; live.geoSrc='addr';
+    save(); if(view==='list') renderList();
+    toast(`已定位「${live.title}」 直線 ${distKm(live)} km`);
+  }catch(_){ /* 沒網路就維持未定位，之後可用批次定位補 */ }
+}
 
 /* ---------- list ---------- */
 $('#q').oninput=e=>{keyword=e.target.value.trim().toLowerCase();renderList();};
@@ -420,13 +563,22 @@ $('#sort').onchange=e=>{sortBy=e.target.value;renderList();};
 $('#chips').onclick=e=>{
   const c=e.target.closest('.chip'); if(!c)return;
   filter=c.dataset.f;
-  document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('on',x===c));
+  $('#chips').querySelectorAll('.chip').forEach(x=>x.classList.toggle('on',x===c));
+  renderList();
+};
+$('#chipsStatus').onclick=e=>{
+  const c=e.target.closest('.chip'); if(!c)return;
+  statusFilter=c.dataset.s;
+  $('#chipsStatus').querySelectorAll('.chip').forEach(x=>x.classList.toggle('on',x===c));
   renderList();
 };
 
 function visible(){
   return data.filter(r=>{
     if(filter&&r.stage!==filter) return false;
+    /* 「追蹤中」= 隱藏已排除；點「已排除」chip 才叫得回來 */
+    if(statusFilter){ if(r.status!==statusFilter) return false; }
+    else if(r.status==='已排除') return false;
     if(!keyword) return true;
     return [r.title,r.builder,r.city,r.area,r.addr,r.agent,r.agency,r.note]
       .join(' ').toLowerCase().includes(keyword);
@@ -437,6 +589,8 @@ function visible(){
       case 'total': return g(a,'total')-g(b,'total');
       case 'ping':  return (b.ping||0)-(a.ping||0);
       case 'rate':  return (b.rate||0)-(a.rate||0);
+      /* 未定位一律排最後 */
+      case 'dist':  return (distKm(a)??Infinity)-(distKm(b)??Infinity);
       default:      return (b.created||0)-(a.created||0);
     }
   });
@@ -451,25 +605,33 @@ function renderList(){
   }
   if(!rows.length){ $('#list').innerHTML='<div class="empty">沒有符合的紀錄</div>'; return; }
   const tagCls={'預售':'','新屋':'g','中古':'y'};
+  const stCls={'候選中':'s-live','要複看':'s-again','已出價':'s-offer','已排除':'s-out'};
   $('#list').innerHTML=rows.map(r=>{
     const loc=[r.city,r.area,r.addr].filter(Boolean).join(' ');
     const who=[r.agency,r.agent].filter(Boolean).join(' · ');
+    const d=distKm(r), a=age(r.built);
+    const fl=r.floor?`${r.floor}${r.floors?'/'+r.floors:''}F`:'';
+    const extra=[fl,a!=null?`${r.built}年 · 屋齡${a}年`:''].filter(Boolean).join(' · ');
     return `<div class="item${picked.has(r.id)?' picked':''}" data-id="${r.id}">
       <div class="top">
         <div class="name">${esc(r.title)}</div>
+        ${r.status?`<span class="tag ${stCls[r.status]||''}">${esc(r.status)}</span>`:''}
         <span class="tag ${tagCls[r.stage]||''}">${esc(r.stage||'')}</span>
       </div>
       <div class="meta">${esc(r.type||'')}${loc?' · '+esc(loc):''}${r.rooms?' · '+esc(r.rooms):''}</div>
+      ${extra?`<div class="meta">${esc(extra)}</div>`:''}
       ${r.builder?`<div class="meta">🏗 ${esc(r.builder)}</div>`:''}
       ${who||r.phone?`<div class="meta">👤 ${esc(who)}${r.phone?` <a class="tel" href="tel:${esc(r.phone)}">${esc(r.phone)}</a>`:''}</div>`:''}
       <div class="nums">
         <div class="num"><b>${fmt(r.total)}</b><span>總價(萬)</span></div>
         <div class="num"><b>${fmt(r.unit)}</b><span>單價(萬/坪)</span></div>
         <div class="num"><b>${fmt(r.ping)}</b><span>坪數</span></div>
+        <div class="num"><b class="${d==null?'muted':''}">${d==null?'未定位':'直線 '+d}</b><span>${d==null?'離'+esc(anchor.name):'km · 離'+esc(anchor.name)}</span></div>
         ${r.rate?`<div class="num"><b class="star">${'★'.repeat(r.rate)}</b><span>評分</span></div>`:''}
       </div>
       ${r.note?`<div class="meta" style="margin-top:8px;white-space:pre-wrap">📝 ${esc(r.note)}</div>`:''}
       <div class="acts">
+        <button class="btn sm" data-a="nav">🧭 導航</button>
         <button class="btn sm" data-a="pick">${picked.has(r.id)?'✓ 已選':'比較'}</button>
         <button class="btn sm" data-a="edit">編輯</button>
         <button class="btn sm dgr" data-a="del">刪除</button>
@@ -486,11 +648,20 @@ $('#list').onclick=async e=>{
     else{ if(picked.size>=5){toast('最多比較 5 筆');return;} picked.add(id); }
     renderList();
   }
+  if(btn.dataset.a==='nav'){
+    const q=hasLL(r)?`${r.lat},${r.lng}`:[r.city,r.area,r.addr].filter(Boolean).join('');
+    if(!q){ toast('這筆沒有地址也沒有座標'); return; }
+    window.open('https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(q),'_blank');
+  }
   if(btn.dataset.a==='edit'){
     editId=id; const f=$('#form'); f.reset();
     Object.entries(r).forEach(([k,v])=>{ if(f[k]&&v!=null&&k!=='id') f[k].value=v; });
     document.querySelectorAll('[name=stage]').forEach(i=>i.checked=i.value===r.stage);
     document.querySelectorAll('[name=rate]').forEach(i=>i.checked=+i.value===r.rate);
+    document.querySelectorAll('[name=status]').forEach(i=>i.checked=i.value===(r.status||'候選中'));
+    setGeoState(hasLL(r)
+      ? `已定位（${r.geoSrc==='gps'?'現場GPS':'地址查詢'}）：${r.lat.toFixed(5)}, ${r.lng.toFixed(5)} · 直線 ${distKm(r)} km`
+      : '未定位 — 儲存時會再查一次，或按上方按鈕用目前位置');
     go('form');
   }
   if(btn.dataset.a==='del'){
@@ -510,21 +681,27 @@ function renderCmp(){
     $('#cmpBody').innerHTML='<div class="empty">請至少選 2 筆物件</div>';
     return;
   }
-  const lows=['unit','total','ratio'];          // 越低越好
+  const view2=rows.map(r=>({...r,dist:distKm(r),ageY:age(r.built)}));
+  const lows=['unit','total','ratio','dist','ageY'];   // 越低越好
   const best={};
-  lows.forEach(k=>{ const v=rows.map(r=>r[k]).filter(x=>x>0); if(v.length>1) best[k]=Math.min(...v); });
-  ['ping','rate'].forEach(k=>{ const v=rows.map(r=>r[k]).filter(x=>x>0); if(v.length>1) best[k]=Math.max(...v); });
+  lows.forEach(k=>{ const v=view2.map(r=>r[k]).filter(x=>x!=null&&x>0); if(v.length>1) best[k]=Math.min(...v); });
+  ['ping','rate'].forEach(k=>{ const v=view2.map(r=>r[k]).filter(x=>x>0); if(v.length>1) best[k]=Math.max(...v); });
   const maxU=Math.max(...rows.map(r=>r.unit||0))||1;
 
   const F=[
+    ['追蹤狀態', r=>esc(r.status||'—')],
     ['看屋類別', r=>esc(r.stage||'—')],
     ['房屋類別', r=>esc(r.type||'—')],
     ['縣市 / 區域', r=>esc([r.city,r.area].filter(Boolean).join(' ')||'—')],
     ['地址', r=>esc(r.addr||'—')],
+    [`直線距離(km)<br><span style="font-weight:400">離${esc(anchor.name)}</span>`,
+      r=>r.dist==null?'未定位':fmt(r.dist),'dist'],
     ['單坪價(萬)', r=>fmt(r.unit)+(r.unit?`<div class="bar" style="width:${Math.round(r.unit/maxU*100)}%"></div>`:''),'unit'],
     ['總價(萬)', r=>fmt(r.total),'total'],
     ['坪數', r=>fmt(r.ping),'ping'],
     ['房數', r=>esc(r.rooms||'—')],
+    ['樓層', r=>r.floor?esc(`${r.floor}${r.floors?' / '+r.floors:''} F`):'—'],
+    ['屋齡', r=>r.ageY==null?'—':`${r.built}年 · ${r.ageY}年`,'ageY'],
     ['車位(萬)', r=>fmt(r.park)],
     ['公設比(%)', r=>fmt(r.ratio),'ratio'],
     ['建設公司', r=>esc(r.builder||'—')],
@@ -535,15 +712,60 @@ function renderCmp(){
     ['備註', r=>`<div style="white-space:pre-wrap;min-width:130px">${esc(r.note||'—')}</div>`],
   ];
   $('#cmpBody').innerHTML=`<div class="cmpwrap"><table class="cmp">
-    <thead><tr><th class="rowh"></th>${rows.map(r=>`<th>${esc(r.title)}</th>`).join('')}</tr></thead>
+    <thead><tr><th class="rowh"></th>${view2.map(r=>`<th>${esc(r.title)}</th>`).join('')}</tr></thead>
     <tbody>${F.map(([lab,fn,k])=>`<tr><th class="rowh">${lab}</th>${
-      rows.map(r=>`<td class="${k&&best[k]!=null&&r[k]===best[k]?'best':''}">${fn(r)}</td>`).join('')
+      view2.map(r=>`<td class="${k&&best[k]!=null&&r[k]===best[k]?'best':''}">${fn(r)}</td>`).join('')
     }</tr>`).join('')}</tbody></table></div>
-    <div class="hint" style="margin:8px 2px">綠底＝該項目最優（單價/總價/公設比越低越好，坪數/評分越高越好）</div>`;
+    <div class="hint" style="margin:8px 2px">綠底＝該項目最優（單價/總價/公設比/距離/屋齡越低越好，坪數/評分越高越好）</div>`;
 }
 $('#cmpPicked').onclick=e=>{
   const c=e.target.closest('.chip'); if(!c) return;
   picked.delete(c.dataset.id); renderCmp();
+};
+
+/* ---------- 錨點設定 ---------- */
+function fillAnchor(){
+  $('#ancQ').value=anchor.name||''; $('#ancLat').value=anchor.lat; $('#ancLng').value=anchor.lng;
+  $('#ancState').textContent=`目前錨點：${anchor.name}（${(+anchor.lat).toFixed(5)}, ${(+anchor.lng).toFixed(5)}）`;
+}
+$('#ancFind').onclick=async()=>{
+  const q=$('#ancQ').value.trim();
+  if(!q){ toast('請先輸入地址或地點'); return; }
+  $('#ancState').textContent='查詢中…';
+  try{
+    const hit=await geocode(q);
+    if(!hit){ $('#ancState').textContent='查無此地點，可改輸入路段（不含門牌），或直接手動填經緯度'; return; }
+    $('#ancLat').value=hit.lat; $('#ancLng').value=hit.lng;
+    $('#ancState').textContent=`查到 ${hit.lat.toFixed(5)}, ${hit.lng.toFixed(5)} — 確認後請按「儲存錨點」`;
+  }catch(_){ $('#ancState').textContent='查詢失敗，請確認網路'; }
+};
+$('#ancSave').onclick=()=>{
+  const la=num($('#ancLat').value), ln=num($('#ancLng').value);
+  if(la==null||ln==null){ toast('經緯度不完整'); return; }
+  anchor={name:$('#ancQ').value.trim()||'錨點',lat:la,lng:ln};
+  saveAnchor(); fillAnchor(); toast('錨點已更新，所有距離已重算');
+  renderList();
+};
+
+/* ---------- 批次定位（Nominatim 規範：每秒最多一次）---------- */
+let batchRunning=false;
+$('#batchGeo').onclick=async()=>{
+  if(batchRunning) return;
+  const todo=data.filter(r=>!hasLL(r)&&[r.city,r.area,r.addr].filter(Boolean).length);
+  if(!todo.length){ toast('沒有需要定位的紀錄'); return; }
+  batchRunning=true; $('#batchGeo').disabled=true;
+  let ok=0;
+  for(let i=0;i<todo.length;i++){
+    $('#batchState').textContent=`定位中 ${i+1}/${todo.length}：${todo[i].title}`;
+    try{
+      const hit=await geocodeRecord(todo[i]);
+      if(hit){ todo[i].lat=hit.lat; todo[i].lng=hit.lng; todo[i].geoSrc='addr'; ok++; save(); }
+    }catch(_){ }
+    if(i<todo.length-1) await sleep(1100);
+  }
+  $('#batchState').textContent=`完成：${todo.length} 筆中成功定位 ${ok} 筆`+
+    (ok<todo.length?'，其餘可到該筆用「📍 用目前位置」補。':'');
+  batchRunning=false; $('#batchGeo').disabled=false; renderList();
 };
 
 /* ---------- backup ---------- */
@@ -555,13 +777,17 @@ function dl(name,text,mime){
 const stamp=()=>new Date().toISOString().slice(0,10);
 $('#expJson').onclick=()=>dl(`看屋紀錄_${stamp()}.json`,JSON.stringify(data,null,2),'application/json');
 $('#expCsv').onclick=()=>{
-  const cols=[['title','建案'],['stage','看屋類別'],['type','房屋類別'],['city','縣市'],['area','區域'],
-    ['addr','地址'],['ping','坪數'],['rooms','房數'],['total','總價(萬)'],['unit','單價(萬/坪)'],
-    ['park','車位(萬)'],['ratio','公設比(%)'],['builder','建設公司'],['agency','仲介公司'],
-    ['agent','業代姓名'],['phone','電話'],['date','看屋日期'],['rate','評分'],['note','備註']];
+  const cols=[['title','建案'],['status','追蹤狀態'],['stage','看屋類別'],['type','房屋類別'],
+    ['city','縣市'],['area','區域'],['addr','地址'],['ping','坪數'],['rooms','房數'],
+    ['floor','樓層'],['floors','總樓層'],['built','建成年份'],['_age','屋齡'],
+    ['total','總價(萬)'],['unit','單價(萬/坪)'],['park','車位(萬)'],['ratio','公設比(%)'],
+    ['_dist',`直線距離km(離${anchor.name})`],['lat','緯度'],['lng','經度'],
+    ['builder','建設公司'],['agency','仲介公司'],['agent','業代姓名'],['phone','電話'],
+    ['date','看屋日期'],['rate','評分'],['note','備註']];
   const q=v=>`"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  const cell=(r,k)=>k==='_age'?age(r.built):k==='_dist'?distKm(r):r[k];
   const csv='\ufeff'+[cols.map(c=>q(c[1])).join(',')]
-    .concat(data.map(r=>cols.map(c=>q(r[c[0]])).join(','))).join('\r\n');
+    .concat(data.map(r=>cols.map(c=>q(cell(r,c[0]))).join(','))).join('\r\n');
   dl(`看屋紀錄_${stamp()}.csv`,csv,'text/csv;charset=utf-8');
 };
 $('#impBtn').onclick=()=>$('#impFile').click();
@@ -594,7 +820,7 @@ function refreshAreas(){
 const _save=save;
 save=function(){_save();refreshAreas();};
 
-resetForm(); refreshAreas(); renderList();
+resetForm(); refreshAreas(); fillAnchor(); renderList();
 })();
 </script>
 </body>
