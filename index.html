@@ -436,11 +436,39 @@ const age=y=>(y>1800&&y<=new Date().getFullYear())?new Date().getFullYear()-y:nu
 /* ---------- 地理編碼：OSM Nominatim（免費免金鑰）----------
    實測台灣門牌（「松高路11號」）查不到，路段（「松高路」）查得到，
    所以第一次失敗後自動去掉 號/巷/弄 再試一次，精度退到路段層級（±200m）。 */
-function stripHouseNo(addr){
-  return String(addr||'')
-    .replace(/\d+\s*(號|弄|巷)[之\-\d]*/g,'')
-    .replace(/[之\-]\d+/g,'')
-    .replace(/\s+/g,' ').trim();
+const T2S={'臺':'台'};
+const normCity=s=>String(s||'').replace(/[臺]/g,c=>T2S[c]);
+
+/* 把使用者實際會打的東西整理乾淨：郵遞區號、重複的縣市、里、樓層、結尾的「口/附近/旁」 */
+function cleanAddr(addr,city,area){
+  let s=normCity(addr).trim();
+  s=s.replace(/^\s*\d{3,6}\s*/,'');                    // 開頭郵遞區號 242 / 242054
+  const c=normCity(city), a=normCity(area);
+  if(c) s=s.split(c).join('');                          // 地址裡重複打了縣市
+  if(a) s=s.split(a).join('');
+  s=s.replace(/[臺台][北中南]?縣/g,'');
+  s=s.replace(/[^\s]{1,4}里(?=[^\s]*[路街道段巷弄號])/g,''); // 「福營里」這種村里名 Nominatim 沒有
+  s=s.replace(/\d+\s*樓.*$/,'').replace(/[Bb]?\d+[Ff].*$/,'');
+  s=s.replace(/(口|附近|旁邊|旁|一帶|交叉口|路口)\s*$/,'');
+  return s.replace(/\s+/g,' ').trim();
+}
+/* 由細到粗的查詢階梯：號 → 巷 → 路 → 區。
+   實測「福營路270巷」查得到，所以巷是獨立一層，不能像先前那樣直接跳過。 */
+function addrLadder(r){
+  const base=[normCity(r.city),normCity(r.area)].filter(Boolean).join('');
+  const s=cleanAddr(r.addr,r.city,r.area);
+  const out=[];
+  if(s) out.push(base+s);
+  if(s){
+    const noNo=s.replace(/\d+\s*號[之\-\d]*/g,'').replace(/(之|\-)\d+/g,'').trim();
+    if(noNo&&noNo!==s) out.push(base+noNo);
+    const m=s.match(/^(.*?\d+\s*巷)/);                  // 保留到「巷」這一層
+    if(m) out.push(base+m[1].trim());
+    const road=s.match(/^(.*?[路街道大道])(\s*[一二三四五六七八九十\d]+段)?/);
+    if(road) out.push(base+(road[1]+(road[2]||'')).trim());
+  }
+  if(base) out.push(base);                              // 最後退到區級（誤差約 1-2 km）
+  return [...new Set(out.filter(Boolean))];
 }
 async function geocode(q){
   const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=tw&q='+encodeURIComponent(q);
@@ -450,15 +478,13 @@ async function geocode(q){
   return j[0]?{lat:parseFloat(j[0].lat),lng:parseFloat(j[0].lon)}:null;
 }
 async function geocodeRecord(r){
-  const base=[r.city,r.area].filter(Boolean).join('');
-  const full=base+(r.addr||'');
-  if(!full) return null;
-  let hit=await geocode(full);
-  if(!hit){
-    const loose=base+stripHouseNo(r.addr);
-    if(loose && loose!==full){ await sleep(1100); hit=await geocode(loose); }
+  const tries=addrLadder(r);
+  for(let i=0;i<tries.length;i++){
+    if(i) await sleep(1100);                            // Nominatim 規範：每秒最多一次
+    const hit=await geocode(tries[i]);
+    if(hit) return {...hit,matched:tries[i],level:i};
   }
-  return hit;
+  return null;
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
@@ -751,20 +777,30 @@ $('#ancSave').onclick=()=>{
 let batchRunning=false;
 $('#batchGeo').onclick=async()=>{
   if(batchRunning) return;
-  const todo=data.filter(r=>!hasLL(r)&&[r.city,r.area,r.addr].filter(Boolean).length);
-  if(!todo.length){ toast('沒有需要定位的紀錄'); return; }
+  const missing=data.filter(r=>!hasLL(r));
+  const todo=missing.filter(r=>addrLadder(r).length);
+  const noAddr=missing.filter(r=>!addrLadder(r).length);
+  if(!missing.length){ $('#batchState').textContent='所有紀錄都已定位。'; toast('所有紀錄都已定位'); return; }
+  if(!todo.length){
+    $('#batchState').textContent=`有 ${noAddr.length} 筆未定位，但都沒有填縣市或地址，無法查詢：${noAddr.map(r=>r.title).join('、')}`;
+    return;
+  }
   batchRunning=true; $('#batchGeo').disabled=true;
-  let ok=0;
+  let ok=0; const failed=[];
   for(let i=0;i<todo.length;i++){
     $('#batchState').textContent=`定位中 ${i+1}/${todo.length}：${todo[i].title}`;
     try{
       const hit=await geocodeRecord(todo[i]);
-      if(hit){ todo[i].lat=hit.lat; todo[i].lng=hit.lng; todo[i].geoSrc='addr'; ok++; save(); }
-    }catch(_){ }
+      if(hit){ todo[i].lat=hit.lat; todo[i].lng=hit.lng; todo[i].geoSrc='addr'; todo[i].geoMatch=hit.matched; ok++; save(); }
+      else failed.push(todo[i].title);
+    }catch(_){ failed.push(todo[i].title+'(連線失敗)'); }
     if(i<todo.length-1) await sleep(1100);
   }
-  $('#batchState').textContent=`完成：${todo.length} 筆中成功定位 ${ok} 筆`+
-    (ok<todo.length?'，其餘可到該筆用「📍 用目前位置」補。':'');
+  $('#batchState').innerHTML=[
+    `完成：${todo.length} 筆中成功定位 ${ok} 筆。`,
+    failed.length?`查不到：${esc(failed.join('、'))} — 請改填「路名」即可（不需門牌），或到現場用「📍 用目前位置」。`:'',
+    noAddr.length?`另有 ${noAddr.length} 筆沒填縣市或地址，已略過：${esc(noAddr.map(r=>r.title).join('、'))}`:''
+  ].filter(Boolean).join('<br>');
   batchRunning=false; $('#batchGeo').disabled=false; renderList();
 };
 
